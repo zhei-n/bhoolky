@@ -5,11 +5,25 @@
 :: Created by [Zarueimi]
 :: Date: %date%
 :: ================================================
-
+:INIT
 title BHOOLKY Network Manager v1.0
 color 0A
 mode con: cols=90 lines=30
 setlocal enabledelayedexpansion
+
+:: Check for updates weekly
+if exist "%TEMP%\last_update_check.txt" (
+    for /f %%i in ("%TEMP%\last_update_check.txt") do set last_check=%%~ti
+) else (
+    set last_check=0
+)
+
+:: Only check once per week
+if %last_check% LSS %date% (
+    echo Checking for updates...
+    powershell -nop -c "try{$d=irm 'https://raw.githubusercontent.com/[YOU]/BHOOLKY-Network-Manager/main/version.txt';if($d -gt '1.0'){echo New version $d available! Visit https://github.com/[YOU]/BHOOLKY-Network-Manager}}catch{echo Update check failed}" >nul
+    echo %date% > "%TEMP%\last_update_check.txt"
+)
 
 :: Admin Check
 :check_admin
@@ -272,5 +286,3 @@ ipconfig /renew
 echo ✅ Network reset complete!
 pause
 goto menu
-
-
