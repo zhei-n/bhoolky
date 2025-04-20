@@ -16,7 +16,7 @@
 3. Follow on-screen menu
 
 ## 🖥️ Requirements
-- Windows 10/11
+- Windows OS
 - Administrator access
   
 ## Steps
