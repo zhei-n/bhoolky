@@ -21,7 +21,7 @@
   
 ## Steps
 ```run in powershell powershell
-iwr -Uri "https://bit.ly/bhoolky-net" -OutFile BHOOLKY_Network.bat
+irm https://raw.githubusercontent.com/Zhei-n/bhoolky/main/BHOOLKY_Network.bat -OutFile BHOOLKY_Network.bat
 
 1. [Download the script](BHOOLKY_Network.bat)
 2. Right-click → "Run as administrator"
