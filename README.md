@@ -1,5 +1,9 @@
 # 👻 BHOOLKY Network Manager
-*A Windows batch script for advanced network configuration*
+
+ ░█▀▄░█░█░█▀█░█▀█░█░░░█░█░█░█
+ ░█▀▄░█▀█░█░█░█░█░█░░░█▀▄░░█░
+ ░▀▀░░▀░▀░▀▀▀░▀▀▀░▀▀▀░▀░▀░░▀░
+*A Windows batch script for network configuration*
 
 ## 🌟 Features
 | Feature          | Description                            |
