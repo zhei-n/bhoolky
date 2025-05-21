@@ -13,16 +13,22 @@ setlocal enabledelayedexpansion
 
 :: Check for updates weekly
 if exist "%TEMP%\last_update_check.txt" (
-    for /f %%i in ("%TEMP%\last_update_check.txt") do set last_check=%%~ti
+    for /f "tokens=2-4 delims=/ " %%a in ('date /t') do (
+        set current_date=%%c%%a%%b
+    )
+    for /f "tokens=2-4 delims=/ " %%a in ('type "%TEMP%\last_update_check.txt"') do (
+        set last_date=%%c%%a%%b
+    )
+    
+    if !current_date! GTR !last_date! (
+        goto check_update
+    )
 ) else (
-    set last_check=0
-)
-
-:: Only check once per week
-if %last_check% LSS %date% (
+    :check_update
     echo Checking for updates...
-    powershell -nop -c "try{$d=irm 'https://raw.githubusercontent.com/[YOU]/BHOOLKY-Network-Manager/main/version.txt';if($d -gt '1.0'){echo New version $d available! Visit https://github.com/[YOU]/BHOOLKY-Network-Manager}}catch{echo Update check failed}" >nul
     echo %date% > "%TEMP%\last_update_check.txt"
+    :: Comment out potentially problematic update check
+    :: powershell command removed for stability
 )
 
 :: Admin Check
@@ -38,11 +44,11 @@ timeout /t 3 /nobreak >nul
 
 :: UAC Elevation with VBS fallback
 :UACPrompt
-:: UAC Elevation with VBS fallback
 echo Set UAC = CreateObject^("Shell.Application"^) > "%temp%\getadmin.vbs"
 echo UAC.ShellExecute "%~s0", "", "", "runas", 1 >> "%temp%\getadmin.vbs"
-"%temp%\getadmin.vbs"
+start "" "%temp%\getadmin.vbs"
 if exist "%temp%\getadmin.vbs" del "%temp%\getadmin.vbs"
+:: Don't pause or exit here - let the elevated script continue
 exit /B
 
 
@@ -63,15 +69,21 @@ timeout /t 3 /nobreak >nul
 goto start
 
 :start
-:: This section detects active network adapters
-:: using netsh command with connected interface filtering
-for /f "tokens=3*" %%a in ('netsh interface show interface ^| findstr "Connected"') do (
-    set "adapter=%%b"
+:: Check for network adapters more robustly
+set "adapter="
+for /f "tokens=*" %%a in ('netsh interface show interface ^| findstr /i "Connected"') do (
+    set "line=%%a"
+    set "line=!line:*Connected=!"
+    set "adapter=!line:~1!"
+    goto found_adapter
 )
+
+:found_adapter
 if "%adapter%"=="" (
     echo No active adapter found. Please connect a network.
-    pause
-    exit /b
+    echo Press any key to try again...
+    pause >nul
+    goto start
 )
 
 :menu
@@ -116,16 +128,111 @@ pause
 goto menu
 
 :static
+cls
+echo ====== [Set Static IP] ======
+echo Current Network Settings:
+netsh interface ip show config name="%adapter%" | findstr "IP Address"
+netsh interface ip show config name="%adapter%" | findstr "Subnet"
+netsh interface ip show config name="%adapter%" | findstr "Gateway"
 
+echo.
+set /p ip="Enter IP Address (e.g. 192.168.1.100): "
+set /p mask="Enter Subnet Mask (e.g. 255.255.255.0): "
+set /p gateway="Enter Gateway (e.g. 192.168.1.1): "
+set /p dns1="Enter Primary DNS (e.g. 8.8.8.8): "
+set /p dns2="Enter Secondary DNS (e.g. 8.8.4.4): "
+
+echo.
+echo Setting Static IP...
+netsh interface ip set address name="%adapter%" static %ip% %mask% %gateway% 1
+netsh interface ip set dns name="%adapter%" static %dns1% primary
+netsh interface ip add dns name="%adapter%" %dns2% index=2
+echo.
+echo Static IP configured!
+pause
+goto menu
 
 :dns
+cls
+echo ====== [Change DNS Only] ======
+echo Current DNS Settings:
+netsh interface ip show config name="%adapter%" | findstr "DNS"
 
+echo.
+echo 1. Google DNS (8.8.8.8, 8.8.4.4)
+echo 2. Cloudflare DNS (1.1.1.1, 1.0.0.1)
+echo 3. OpenDNS (208.67.222.222, 208.67.220.220)
+echo 4. Custom DNS
+echo 5. Back to Menu
+set /p dnschoice="Choose DNS (1-5): "
+
+if "%dnschoice%"=="1" (
+    netsh interface ip set dns name="%adapter%" static 8.8.8.8 primary 
+    netsh interface ip add dns name="%adapter%" 8.8.4.4 index=2
+    echo Google DNS applied!
+) else if "%dnschoice%"=="2" (
+    netsh interface ip set dns name="%adapter%" static 1.1.1.1 primary
+    netsh interface ip add dns name="%adapter%" 1.0.0.1 index=2
+    echo Cloudflare DNS applied!
+) else if "%dnschoice%"=="3" (
+    netsh interface ip set dns name="%adapter%" static 208.67.222.222 primary
+    netsh interface ip add dns name="%adapter%" 208.67.220.220 index=2
+    echo OpenDNS applied!
+) else if "%dnschoice%"=="4" (
+    set /p primary="Enter Primary DNS: "
+    set /p secondary="Enter Secondary DNS: "
+    netsh interface ip set dns name="%adapter%" static %primary% primary
+    netsh interface ip add dns name="%adapter%" %secondary% index=2
+    echo Custom DNS applied!
+) else if "%dnschoice%"=="5" (
+    goto menu
+)
+pause
+goto menu
 
 :dhcp
-
+cls
+echo ====== [Set DHCP] ======
+echo Configuring adapter for automatic IP...
+netsh interface ip set address name="%adapter%" dhcp
+netsh interface ip set dns name="%adapter%" dhcp
+echo.
+echo DHCP enabled! Your network will assign IP automatically.
+pause
+goto menu
 
 :profiles
+cls
+echo ====== [Network Profiles] ======
+echo 1. Home Network (192.168.1.x)
+echo 2. Office Network (10.0.0.x)
+echo 3. Public Wi-Fi (DHCP)
+echo 4. Save Current as Profile
+echo 5. Back to Menu
+set /p profilechoice="Choose Profile (1-5): "
 
+if "%profilechoice%"=="1" (
+    netsh interface ip set address name="%adapter%" static 192.168.1.100 255.255.255.0 192.168.1.1
+    netsh interface ip set dns name="%adapter%" static 1.1.1.1 primary
+    netsh interface ip add dns name="%adapter%" 1.0.0.1 index=2
+    echo Home Network profile applied!
+) else if "%profilechoice%"=="2" (
+    netsh interface ip set address name="%adapter%" static 10.0.0.100 255.255.255.0 10.0.0.1
+    netsh interface ip set dns name="%adapter%" static 10.0.0.1 primary
+    netsh interface ip add dns name="%adapter%" 8.8.8.8 index=2
+    echo Office Network profile applied!
+) else if "%profilechoice%"=="3" (
+    netsh interface ip set address name="%adapter%" dhcp
+    netsh interface ip set dns name="%adapter%" dhcp
+    echo Public Wi-Fi profile (DHCP) applied!
+) else if "%profilechoice%"=="4" (
+    set /p profilename="Enter profile name: "
+    set backupfile=Network_Profile_%profilename%.txt
+    netsh -c interface dump > "C:\%backupfile%"
+    echo Profile saved to C:\%backupfile%
+)
+pause
+goto menu
 
 :backuprestore
 cls
@@ -141,24 +248,24 @@ if "%brchoice%"=="1" (
     set backupfile=Network_Backup_%date:/=-%_%time::=-%.txt
     set backupfile=%backupfile: =_%
     netsh -c interface dump > "C:\%backupfile%"
-    echo ✅ Backup saved to C:\%backupfile%
+    echo Backup saved to C:\%backupfile%
 ) else if "%brchoice%"=="2" (
     dir /b C:\Network_Backup_*.txt
     set /p restorefile="Enter filename: "
     if exist "C:\%restorefile%" (
         netsh -f "C:\%restorefile%"
-        echo ✅ Settings restored!
+        echo Settings restored!
     ) else ( echo ❌ File not found! )
 ) else if "%brchoice%"=="3" (
     set /p exportfile="Enter export filename: "
     netsh -c interface dump > "%exportfile%"
-    echo ✅ Exported to %exportfile%
+    echo Exported to %exportfile%
 ) else if "%brchoice%"=="4" (
     set /p importfile="Enter import filename: "
     if exist "%importfile%" (
         netsh -f "%importfile%"
-        echo ✅ Settings imported!
-    ) else ( echo ❌ File not found! )
+        echo Settings imported!
+    ) else ( echo File not found! )
 )
 pause
 goto menu
@@ -179,10 +286,10 @@ if "%diagchoice%"=="1" (
     tracert 8.8.8.8
 ) else if "%diagchoice%"=="3" (
     ipconfig /flushdns
-    echo ✅ DNS cache flushed!
+    echo DNS cache flushed!
 ) else if "%diagchoice%"=="4" (
     netsh int ip reset
-    echo ✅ TCP/IP stack reset!
+    echo TCP/IP stack reset!
 )
 pause
 goto menu
@@ -207,10 +314,10 @@ if "%wifichoice%"=="1" (
     ) else (
         netsh wlan connect name="%ssid%" ssid="%ssid%" keyMaterial="%pass%"
     )
-    echo ✅ Connecting to %ssid%...
+    echo Connecting to %ssid%...
 ) else if "%wifichoice%"=="3" (
     netsh wlan disconnect
-    echo ✅ Disconnected!
+    echo Disconnected!
 ) else if "%wifichoice%"=="4" (
     netsh wlan show profiles
 )
@@ -231,20 +338,20 @@ if "%vpnchoice%"=="1" (
     set /p ovpnfile="Enter OpenVPN config path: "
     if exist "%ovpnfile%" (
         start "" "C:\Program Files\OpenVPN\bin\openvpn.exe" --config "%ovpnfile%"
-        echo ✅ OpenVPN connecting...
+        echo OpenVPN connecting...
     ) else ( echo ❌ File not found! )
 ) else if "%vpnchoice%"=="2" (
     taskkill /f /im openvpn.exe
-    echo ✅ OpenVPN disconnected!
+    echo OpenVPN disconnected!
 ) else if "%vpnchoice%"=="3" (
     set /p wgconf="Enter WireGuard config path: "
     if exist "%wgconf%" (
         start "" "C:\Program Files\WireGuard\wireguard.exe" /installtunnelservice "%wgconf%"
-        echo ✅ WireGuard connecting...
+        echo WireGuard connecting...
     ) else ( echo ❌ File not found! )
 ) else if "%vpnchoice%"=="4" (
     taskkill /f /im wireguard.exe
-    echo ✅ WireGuard disconnected!
+    echo WireGuard disconnected!
 )
 pause
 goto menu
@@ -266,7 +373,7 @@ if "%dnschoice%"=="1" (
     :: Simple logic - you can enhance this with actual benchmarks
     netsh interface ipv4 set dns name="%adapter%" static 1.1.1.1 primary
     netsh interface ipv4 add dns name="%adapter%" 1.0.0.1 index=2
-    echo ✅ Cloudflare DNS (1.1.1.1) applied!
+    echo Cloudflare DNS (1.1.1.1) applied!
 ) else if "%dnschoice%"=="2" (
     set /p testdns="Enter DNS IP to test: "
     ping -n 4 %testdns%
@@ -277,12 +384,23 @@ goto menu
 :reset
 cls
 echo ====== [Network Reset] ======
-echo Resetting network components...
-netsh winsock reset
-netsh int ip reset
-ipconfig /flushdns
-ipconfig /release
-ipconfig /renew
-echo ✅ Network reset complete!
+echo This will reset all network settings.
+echo Your network connections may be temporarily interrupted.
+echo.
+echo 1. Proceed with Reset
+echo 2. Back to Menu
+set /p resetconfirm="Choose (1-2): "
+
+if "%resetconfirm%"=="1" (
+    echo Resetting network components...
+    netsh winsock reset
+    netsh int ip reset
+    ipconfig /flushdns
+    ipconfig /release
+    ipconfig /renew
+    echo.
+    echo Network reset complete!
+    echo You may need to restart your computer for changes to take effect.
+)
 pause
 goto menu
